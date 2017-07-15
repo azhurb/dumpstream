@@ -4,37 +4,72 @@ import socket
 import sys
 import time
 import struct
-import operator
 import datetime
 import argparse
 import signal
 import threading
 import os
-import httplib
-from urlparse import urlparse
-import urllib
+import base64
+import json
+import errno
+
+if sys.version < '3':
+    import httplib
+    from urlparse import urlparse
+    import urllib
+else:
+    import http.client
+    from urllib.parse import urlparse
+    import urllib.request, urllib.parse, urllib.error
+
 
 def main():
 
     eseq  = 0
     flag  = 0
     f     = 0
-    prev_fname  = -1
+    prev_fname = -1
+    buf   = ''
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((args.ip_address, args.port))
-    mreq = struct.pack(">4sl", socket.inet_aton(args.ip_address), socket.INADDR_ANY)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    global stop_time
+
+    if args.length:
+        stop_time = time.time() + args.start_delay + args.length
+
+    if args.start_delay > 0:
+        sys.stderr.write('Start delay %ds\n' % args.start_delay)
+        time.sleep(args.start_delay)
+
+    if args.callback_url and args.length:
+        async_open_url(args.callback_url, {'action': 'started'})
+
+    sock = get_socket()
 
     while True:
-        buf = sock.recv(1590)
+        try:
+            data = bytearray(b" " * 2048)
+            size = sock.recv_into(data)
 
-        if buf[0].encode('hex') == '47':
+            if data and not buf:
+                sys.stderr.write('Start capturing\n')
+            buf = data[:size]
+        except socket.timeout:
+            sock.close()
+            buf = ''
+            sys.stderr.write('No data, reconnecting...\n')
+            sock = get_socket()
+            continue
+        except socket.error as e:
+            if e.errno != errno.EINTR:
+                raise
+            else:
+                continue
+
+        if buf[0] == 71:  # UDP 0x47
             data = buf
-        else:
-            header_size = 12 + 4 * operator.and_(int(buf[0].encode('hex'), 16), 16)
-            seq = int((buf[2:4]).encode('hex'), 16)
+        else:  # RTP
+            header_size = 12 + 4 * (buf[0] & 16)
+            seq = (buf[2] << 8)+buf[3]
 
             if not flag:
                 eseq = seq
@@ -48,11 +83,24 @@ def main():
             if eseq > 65535:
                 eseq = 0
 
-            #sys.stderr.write(str(seq)+'\n')
-            #sys.stderr.write(buf[:32].encode('hex')+'\n')
             data = buf[header_size:]
 
-        if args.save_directory:
+        if args.out_file:
+            if stop_time and stop_time <= time.time():
+                if f:
+                    f.close()
+                if args.callback_url:
+                    async_open_url(args.callback_url, {'action': 'ended'})
+                    time.sleep(5)
+                sys.exit()
+
+            if not f:
+                f = open(args.out_file, 'ab', args.buffering)
+
+            f.write(data)
+
+        elif args.save_directory:
+
             fname = datetime.datetime.now().strftime(date_format)
 
             if prev_fname != fname:
@@ -60,22 +108,27 @@ def main():
                     f.close()
                     async_rm_old_files()
 
-                    async_open_url(args.callback_url, {'start_time' : int(time.mktime((datetime.datetime.strptime(fname, date_format) - datetime.timedelta(hours=args.pieces_number)).timetuple()))})
-
                     if args.callback_url:
-                        async_open_url(args.callback_url, {'end_time' : int(time.time())})
+                        async_open_url(args.callback_url, {'start_time': int(time.mktime((datetime.datetime.strptime(fname, date_format) - datetime.timedelta(hours=args.pieces_number)).timetuple()))})
+                        async_open_url(args.callback_url, {'end_time': int(time.time())})
 
-                f = open(args.save_directory + fname +'.mpg', 'a')
+                f = open(args.save_directory + fname + '.mpg', 'ab', args.buffering)
 
             prev_fname = fname
+
             f.write(data)
-        else :
-            sys.stdout.write(data)
+        else:
+            if sys.version < '3':
+                sys.stdout.write(data)
+            else:
+                sys.stdout.buffer.write(data)
+
 
 class AsyncRmOldFiles(threading.Thread):
     def __init__(self):
         super(AsyncRmOldFiles, self).__init__()
         self.from_time = int(time.mktime((datetime.datetime.now() - datetime.timedelta(hours=args.pieces_number)).timetuple()))
+
     def run(self):
         for file in os.listdir(args.save_directory):
             if file.find('.mpg') == len(file)-4:
@@ -87,33 +140,95 @@ class AsyncRmOldFiles(threading.Thread):
                 except ValueError:
                     pass
                 except OSError as error:
-                    sys.stderr.write('Error deleting file '+ file + ' - ' + error)
+                    sys.stderr.write('Error deleting file ' + file + ' - ' + error.message)
+
 
 def async_rm_old_files():
     AsyncRmOldFiles().start()
+
 
 def signal_handler(signal, frame):
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
+
+def update_end_time(signal, frame):
+    async_open_url(args.callback_url, {}, update_stop_time, 'GET')
+
+signal.signal(signal.SIGALRM, update_end_time)
+
+
+def update_stop_time(response):
+    global stop_time
+    response = json.loads(response.decode("utf-8"))
+    if response['results'] and response['results']['stop']:
+        stop_time = response['results']['stop']
+
+
 class AsyncOpenUrl(threading.Thread):
-    def __init__(self, url, params):
+    def __init__(self, url, params, callback, method):
         super(AsyncOpenUrl, self).__init__()
-        self.url    = url
+        self.callback = callback
+        self.method = method
+        self.url = url
         self.params = params
+
     def run(self):
-        url    = urlparse(self.url)
-        params = urllib.urlencode(self.params)
+        url = urlparse(self.url)
+        if sys.version < '3':
+            params = urllib.urlencode(self.params)
+        else:
+            params = urllib.parse.urlencode(self.params)
         sys.stderr.write('Sending ' + params + ' to callback url: ' + self.url + '\n')
-        conn   = httplib.HTTPConnection(url.netloc)
-        conn.request('PUT', url.path, params)
-        resp   = conn.getresponse()
-        data   = resp.read()
-        sys.stderr.write(data + '\n')
+        if sys.version < '3':
+            conn = httplib.HTTPConnection(url.hostname)
+        else:
+            conn = http.client.HTTPConnection(url.hostname)
+        conn.putrequest(self.method, url.path)
+        conn.putheader('Connection', 'close')
+        if self.method in ['PUT', 'POST']:
+            conn.putheader('Content-Type', 'application/x-www-form-urlencoded')
+            conn.putheader('Content-Length', str(len(params)))
+        if url.username:
+            credentials = '%s:%s' % (url.username, url.password)
+            if sys.version > '3':
+                credentials = bytearray(credentials.encode("utf-8"))
+            auth = base64.b64encode(credentials).decode("utf-8")
+            conn.putheader("Authorization", "Basic %s" % auth)
+        conn.endheaders()
+        if sys.version > '3':
+            params = bytearray(params.encode("utf-8"))
+        conn.send(params)
+        resp = conn.getresponse()
+        data = resp.read()
+        if sys.version < '3':
+            sys.stderr.write(data + '\n')
+        else:
+            sys.stderr.buffer.write(data)
+            sys.stderr.write('\n')
+        if self.callback:
+            self.callback(data)
         conn.close()
 
-def async_open_url(url, params):
-    AsyncOpenUrl(url, params).start()
+
+def async_open_url(url, params, callback=None, method='PUT'):
+    AsyncOpenUrl(url, params, callback, method).start()
+
+
+def get_socket():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((args.ip_address, args.port))
+        mreq = struct.pack(">4sl", socket.inet_aton(args.ip_address), socket.INADDR_ANY)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        sock.settimeout(10)
+    except socket.error as e:
+        sys.stderr.write(e.strerror + ', waiting 30s\n')
+        time.sleep(30)
+        return get_socket()
+
+    return sock
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Stream dump. Can work with rtp and udp streams.')
@@ -122,10 +237,14 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--save_directory', help='directory to save pieces')
     parser.add_argument('-n', '--pieces_number', help='number of pieces', type=int)
     parser.add_argument('-c', '--callback_url', help='callback url, use to send HTTP PUT with start_time/end_time params')
+    parser.add_argument('-l', '--length', help='recording length', type=int)
+    parser.add_argument('-s', '--start_delay', help='delay before start recording', type=int, default=0)
+    parser.add_argument('-o', '--out_file', help='save output to file with specified name')
+    parser.add_argument('-b', '--buffering', help='buffer to use when opening files', type=int, default=8)
     args = parser.parse_args()
-    #print args
+    args.buffering *= 1024*1024
+    stop_time = 0
     date_format = '%Y%m%d-%H'
-    #date_format = '%Y%m%d-%M'
     sys.stderr.write('Stream dump\n')
     sys.stderr.write('Using %s:%d\n' % (args.ip_address, args.port))
     main()
