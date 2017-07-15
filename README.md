@@ -4,6 +4,7 @@ MPEG-TS stream dump. Can works with rtp/udp streams.
 
 ## Usage
 
+```
 usage: dumpstream [-h] [-a IP_ADDRESS] [-p PORT] [-d SAVE_DIRECTORY]
                   [-n PIECES_NUMBER] [-c CALLBACK_URL]
 
@@ -19,5 +20,6 @@ optional arguments:
   -n PIECES_NUMBER, --pieces_number PIECES_NUMBER
                         number of pieces
   -c CALLBACK_URL, --callback_url CALLBACK_URL
-                        callback url, use to send HTTP PUT with
-                        start_time/end_time params
+                        callback url, use to send HTTP PUT with
+                        start_time/end_time params
+```
