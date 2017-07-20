@@ -1,6 +1,6 @@
 # Dumpstream
 
-MPEG-TS stream dump. Can works with rtp/udp streams. 
+MPEG-TS stream dump. Can works with rtp/udp streams.  
 rtpdump compatible.
 
 ## Usage
