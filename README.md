@@ -33,3 +33,6 @@ optional arguments:
   -b BUFFERING, --buffering BUFFERING
                         buffer to use when opening files
 ```
+
+## License
+Licensed under the MIT license.
