@@ -34,5 +34,15 @@ optional arguments:
                         buffer to use when opening files
 ```
 
+## Examples
+```
+python ./dumpstream -a 224.1.1.1 -p 1234 -s 60 -l 3600 -c /api/callback/ -o /save/path/dump.mpg -b 1
+```
+
+```
+python ./dumpstream -a 224.1.1.1 -p 1234 -d /save/path/ -n 24 -b 1
+```
+
+
 ## License
 Licensed under the MIT license.
