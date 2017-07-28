@@ -42,7 +42,7 @@ python ./dumpstream -a 224.1.1.1 -p 1234 -s 60 -l 3600 -c /api/callback/ -o /sav
 ```
 python ./dumpstream -a 224.1.1.1 -p 1234 -d /save/path/ -n 24 -b 1
 ```
-
+Stores pieces of 1 hour duration in a directory `/save/path/` for 24 hours.
 
 ## License
 Licensed under the MIT license.
