@@ -38,6 +38,7 @@ optional arguments:
 ```
 python ./dumpstream -a 224.1.1.1 -p 1234 -s 60 -l 3600 -c /api/callback/ -o /save/path/dump.mpg -b 1
 ```
+Stores one piece of 1 hour duration in `/save/path/dump.mpg` with start delay in 60 seconds. Also uses API callback and buffering setting.
 
 ```
 python ./dumpstream -a 224.1.1.1 -p 1234 -d /save/path/ -n 24 -b 1
