@@ -1,6 +1,6 @@
 # Dumpstream
 
-MPEG-TS stream dump. Can works with rtp/udp streams.  
+MPEG-TS stream dump. Works with rtp and udp streams.  
 rtpdump compatible.
 
 ## Usage
@@ -10,7 +10,7 @@ usage: dumpstream [-h] [-a IP_ADDRESS] [-p PORT] [-d SAVE_DIRECTORY]
                   [-n PIECES_NUMBER] [-c CALLBACK_URL] [-l LENGTH]
                   [-s START_DELAY] [-o OUT_FILE] [-b BUFFERING]
 
-Stream dump. Can work with rtp and udp streams.
+Stream dump. Works with rtp and udp streams.
 
 optional arguments:
   -h, --help            show this help message and exit
