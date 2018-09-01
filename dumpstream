@@ -231,7 +231,7 @@ def get_socket():
     return sock
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Stream dump. Work with rtp and udp streams.')
+    parser = argparse.ArgumentParser(description='Stream dump. Works with rtp and udp streams.')
     parser.add_argument('-a', '--ip_address', help='ip address', default='224.0.1.2')
     parser.add_argument('-p', '--port', help='port', default=5004, type=int)
     parser.add_argument('-d', '--save_directory', help='directory to save pieces')
