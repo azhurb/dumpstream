@@ -12,6 +12,7 @@ import os
 import base64
 import json
 import errno
+import io
 
 if sys.version < '3':
     import httplib
@@ -22,6 +23,10 @@ else:
     from urllib.parse import urlparse
     import urllib.request, urllib.parse, urllib.error
 
+if not hasattr(socket, 'IP_MULTICAST_TTL'):
+  setattr(socket, 'IP_MULTICAST_TTL', 33)
+if not hasattr(socket, 'IP_ADD_SOURCE_MEMBERSHIP'):
+  setattr(socket, 'IP_ADD_SOURCE_MEMBERSHIP', 39)
 
 def main():
 
@@ -219,9 +224,19 @@ def get_socket():
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        if args.receiver_address:
+            imr = (socket.inet_pton(socket.AF_INET, args.ip_address) +
+                   socket.inet_pton(socket.AF_INET, "0.0.0.0") +
+                   socket.inet_pton(socket.AF_INET, args.receiver_address))
+
+            sock.setsockopt(socket.SOL_IP, socket.IP_ADD_SOURCE_MEMBERSHIP, imr)
+        else:
+            mreq = struct.pack(">4sl", socket.inet_aton(args.ip_address), socket.INADDR_ANY)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
         sock.bind((args.ip_address, args.port))
-        mreq = struct.pack(">4sl", socket.inet_aton(args.ip_address), socket.INADDR_ANY)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
         sock.settimeout(10)
     except socket.error as e:
         sys.stderr.write(e.strerror + ', waiting 30s\n')
@@ -233,6 +248,7 @@ def get_socket():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Stream dump. Works with rtp and udp streams.')
     parser.add_argument('-a', '--ip_address', help='ip address', default='224.0.1.2')
+    parser.add_argument('-r', '--receiver_address', help='receiver address')
     parser.add_argument('-p', '--port', help='port', default=5004, type=int)
     parser.add_argument('-d', '--save_directory', help='directory to save pieces')
     parser.add_argument('-n', '--pieces_number', help='number of pieces', type=int)
@@ -240,11 +256,11 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--length', help='recording length', type=int)
     parser.add_argument('-s', '--start_delay', help='delay before start recording', type=int, default=0)
     parser.add_argument('-o', '--out_file', help='save output to file with specified name')
-    parser.add_argument('-b', '--buffering', help='buffer to use when opening files', type=int, default=8)
+    parser.add_argument('-b', '--buffering', help='buffer to use when opening files', type=int, default=io.DEFAULT_BUFFER_SIZE)
     args = parser.parse_args()
     args.buffering *= 1024*1024
     stop_time = 0
     date_format = '%Y%m%d-%H'
     sys.stderr.write('Stream dump\n')
-    sys.stderr.write('Using %s:%d\n' % (args.ip_address, args.port))
+    sys.stderr.write('Using %s@%s:%d\n' % (args.receiver_address, args.ip_address, args.port))
     main()

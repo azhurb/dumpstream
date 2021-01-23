@@ -6,9 +6,9 @@ rtpdump compatible.
 ## Usage
 
 ```
-usage: dumpstream [-h] [-a IP_ADDRESS] [-p PORT] [-d SAVE_DIRECTORY]
-                  [-n PIECES_NUMBER] [-c CALLBACK_URL] [-l LENGTH]
-                  [-s START_DELAY] [-o OUT_FILE] [-b BUFFERING]
+usage: dumpstream [-h] [-a IP_ADDRESS] [-r RECEIVER_ADDRESS] [-p PORT] 
+                  [-d SAVE_DIRECTORY] [-n PIECES_NUMBER] [-c CALLBACK_URL]
+                  [-l LENGTH] [-s START_DELAY] [-o OUT_FILE] [-b BUFFERING]
 
 Stream dump. Works with rtp and udp streams.
 
@@ -16,6 +16,8 @@ optional arguments:
   -h, --help            show this help message and exit
   -a IP_ADDRESS, --ip_address IP_ADDRESS
                         ip address
+  -r RECEIVER_ADDRESS, --receiver_address RECEIVER_ADDRESS
+                        receiver address for source-specific multicast (SSM)
   -p PORT, --port PORT  port
   -d SAVE_DIRECTORY, --save_directory SAVE_DIRECTORY
                         directory to save pieces
